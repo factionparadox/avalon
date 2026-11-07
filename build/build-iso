@@ -14,7 +14,7 @@
 #    only job is the installer, which starts by itself.
 #
 # Settings (environment):
-#   AVALON_WORK    where the work happens (default: build/work/iso; needs about 25 GB)
+#   AVALON_WORK    where the work happens (default: build/work/iso; needs about 30 GB free)
 #   SLACK_CACHE    Slackware's packages, kept between builds (default ~/.cache/avalon/slackware)
 #   SLACK_MIRROR   a Slackware mirror's slackware64-current folder
 set -Eeuo pipefail
@@ -34,6 +34,9 @@ say() { printf '\n==> %s\n' "$*"; }
 die() { printf '\nbuild-iso: %s\n' "$*" >&2; exit 2; }
 [[ $EUID -eq 0 ]] || die "run it with sudo (it builds a system in a folder, as root)"
 for t in curl gpg git chroot mount rsync python3; do command -v $t >/dev/null || die "$t is needed"; done
+# liveslak puts GRUB's EFI loader into a small FAT image by mounting it, so this kernel must mount FAT
+modprobe vfat 2>/dev/null || true
+grep -qw vfat /proc/filesystems || die "this kernel can't mount FAT (vfat), which liveslak needs for the stick's UEFI boot image"
 mkdir -p "$WORK" "$OUT"
 
 run() {   # a command inside ROOT, as root
@@ -100,14 +103,36 @@ while read -r sum f; do
   fi
 done
 
+# liveslak would fetch keytab-lilo from syslinux's moving master branch; give it a pinned copy instead
+KEYTAB_COMMIT=5e426532210bb830d2d7426eb8d8c154d9dfcba6
+KEYTAB_SHA256=ade3ff163997eef2d3eb27bfe4d03bfb394de26c5e563074595ee010fcba8cbc
+keytab=$USERHOME/.cache/avalon/sources/keytab-lilo-$KEYTAB_COMMIT
+if ! { [[ -f $keytab ]] && echo "$KEYTAB_SHA256  $keytab" | sha256sum -c --status; }; then
+  mkdir -p "$(dirname "$keytab")"
+  curl -fsSL --retry 3 -o "$keytab" "https://raw.githubusercontent.com/geneC/syslinux/$KEYTAB_COMMIT/utils/keytab-lilo"
+  echo "$KEYTAB_SHA256  $keytab" | sha256sum -c --status || die "keytab-lilo does not match its checksum"
+fi
+install -Dm755 "$keytab" "$ROOT/usr/local/sbin/keytab-lilo-liveslak"
+
 say "The stick (liveslak's make_slackware_live.sh, in the Slackware system)"
 mkdir -p "$ROOT/tmp/slackrepo/slackware64-current"
 mountpoint -q "$ROOT/tmp/slackrepo/slackware64-current" || mount --bind "$CACHE" "$ROOT/tmp/slackrepo/slackware64-current"
 iso=avalon-$VERSION-x86_64.iso
 rm -f "$ROOT/tmp/$iso"
-run sh -c "cd /tmp/liveslak && ./make_slackware_live.sh -d AVALON -l gb -R 3 -H avalon -X -t doc \
+run sh -c "cd /tmp/liveslak && ./make_slackware_live.sh -f -d AVALON -l gb -R 3 -H avalon -X -t doc \
              -s /tmp/slackrepo -O /tmp/$iso" 2>&1 | tee "$WORK/liveslak.log"
 [[ -s $ROOT/tmp/$iso ]] || die "liveslak made no ISO (its log: $WORK/liveslak.log)"
+# liveslak carries on past some failures, so check the stick can actually start under UEFI
+! grep -E '^(grub-[a-z]+: error|mount: |cp: cannot)' "$WORK/liveslak.log" || die "liveslak hit the errors above (its log: $WORK/liveslak.log)"
+st=$ROOT/tmp/slackwarelive_staging
+[[ -s $st/EFI/BOOT/bootx64.efi ]] || die "liveslak made no EFI/BOOT/bootx64.efi"
+esp=$(mktemp -d)
+mount -o loop,ro "$st/boot/syslinux/efiboot.img" "$esp"
+efi_ok=no; [[ -s $esp/EFI/BOOT/bootx64.efi ]] && efi_ok=yes
+umount "$esp"; rmdir "$esp"
+[[ $efi_ok = yes ]] || die "the stick's UEFI boot image has no EFI/BOOT/bootx64.efi in it"
+run xorriso -indev "/tmp/$iso" -find /EFI/BOOT -name bootx64.efi 2>/dev/null | grep -q bootx64.efi \
+  || die "the ISO has no /EFI/BOOT/bootx64.efi"
 umount -l "$ROOT/tmp/slackrepo/slackware64-current"
 mv "$ROOT/tmp/$iso" "$OUT/$iso"
 ( cd "$OUT" && sha256sum "$iso" > "$iso.sha256" )
