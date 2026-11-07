@@ -1,0 +1,9 @@
+# Avalon: the greetd settings. rc.4.local starts greetd with --config pointing here, so the greetd
+# package's own config.toml (which it overwrites on every upgrade) is never used. The greeter is the Garden's login screen
+# (Quickshell, in cage), which then starts your Mango session.
+[terminal]
+vt = 7
+
+[default_session]
+command = "cage -s -- quickshell -p /usr/share/garden/greeter.qml"
+user = "greeter"

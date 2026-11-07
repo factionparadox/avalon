@@ -169,6 +169,8 @@ steps() {
 	grep -q '^id:4:initdefault:' "$T/etc/inittab" || { echo "couldn't set runlevel 4 in /etc/inittab"; return 1; }
 	[ -x "$T/etc/rc.d/rc.4.local" ] && [ -x "$T/usr/bin/greetd" ] ||
 		{ echo "greetd or rc.4.local is missing: there'd be no login screen"; return 1; }
+	grep -q 'greeter.qml' "$T/etc/greetd/avalon.toml" ||
+		{ echo "/etc/greetd/avalon.toml doesn't start the Garden's login screen"; return 1; }
 	# the services: NetworkManager (Wi-Fi), Bluetooth, elogind (seats), Avalon's own at boot
 	for s in networkmanager bluetooth elogind messagebus; do
 		[ -f "$T/etc/rc.d/rc.$s" ] && chmod 755 "$T/etc/rc.d/rc.$s"

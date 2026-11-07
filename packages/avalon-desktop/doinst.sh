@@ -3,8 +3,7 @@
 # relative to it. The account files are only touched in a complete system (one with root in it):
 # liveslak installs each module into a folder of its own, where an etc/passwd made here would hide
 # the real one. (avalon-install creates the greeter account on the new system itself.)
-mkdir -p etc/greetd etc/mango
-cp -f usr/share/avalon/greetd/config.toml etc/greetd/config.toml
+mkdir -p etc/mango
 cp -f usr/share/avalon/mango/config.conf etc/mango/config.conf
 if [ -f etc/passwd ] && grep -q '^root:' etc/passwd && [ -f etc/group ] && grep -q '^root:' etc/group; then
   grep -q '^greeter:' etc/group || echo 'greeter:x:381:' >> etc/group

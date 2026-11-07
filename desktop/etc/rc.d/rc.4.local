@@ -2,6 +2,6 @@
 # /etc/rc.d/rc.4.local: Avalon's graphical start. Slackware's runlevel 4 runs this instead of its
 # own display-manager list: greetd, which shows the Garden System's login screen (in cage).
 if [ -x /usr/bin/greetd ]; then
-  exec /usr/bin/greetd
+  exec /usr/bin/greetd --config /etc/greetd/avalon.toml
 fi
 echo "rc.4.local: greetd isn't installed; falling back to a console login." >&2
