@@ -131,6 +131,13 @@ mount -o loop,ro "$st/boot/syslinux/efiboot.img" "$esp"
 efi_ok=no; [[ -s $esp/EFI/BOOT/bootx64.efi ]] && efi_ok=yes
 umount "$esp"; rmdir "$esp"
 [[ $efi_ok = yes ]] || die "the stick's UEFI boot image has no EFI/BOOT/bootx64.efi in it"
+# the live session's own settings (module 0099): the installer, and what starts it on tty1
+zzz=$(ls "$st"/liveslak/system/0099-*zzzconf*.sxz 2>/dev/null | head -1)
+[[ -n $zzz ]] || die "liveslak made no zzzconf module"
+listing=$(run unsquashfs -l "/tmp/slackwarelive_staging/liveslak/system/$(basename "$zzz")")
+for f in usr/sbin/avalon-install etc/profile.d/avalon-installer.sh; do
+  grep -q "/$f\$" <<<"$listing" || die "the live session is missing /$f, so the installer wouldn't start"
+done
 run xorriso -indev "/tmp/$iso" -find /EFI/BOOT -name bootx64.efi 2>/dev/null | grep -q bootx64.efi \
   || die "the ISO has no /EFI/BOOT/bootx64.efi"
 umount -l "$ROOT/tmp/slackrepo/slackware64-current"
