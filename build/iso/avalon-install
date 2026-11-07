@@ -37,8 +37,8 @@ restart, and pick the stick's UEFI entry in the boot menu."
 d --title " Avalon " --msgbox "\n\
 Pasha keeps the garden.\n\n\
 This puts \Zb\Z6Avalon\Zn on this laptop: Slackware, with the Garden System on top.\n\n\
-Five questions, then it copies itself across: no internet needed, nothing compiled, a few \
-minutes. Wi-Fi is set up once you're in the Garden.\n\n\
+Five questions, then it copies itself across: no internet needed, nothing compiled. \
+Wi-Fi is set up once you're in the Garden.\n\n\
 \Z3Up/Down\Zn choose · \Z3Tab\Zn moves between buttons · \Z3Enter\Zn confirms · \Z3Esc\Zn backs out" 17 78 \
 	|| quit "Stopped; nothing was touched."
 
