@@ -6,7 +6,7 @@ import qs.services
 import qs.components
 
 // The Garden System's HUD, laid out like a game screen around the garden:
-//   top right     the day counter: the time and date, a 0-40 scale (battery), ♪ what's playing ♪
+//   top right     the day counter: the time and date, a 0-40 scale with the battery and sound bars
 //   top centre    the focused window's name plate
 //   bottom left   the planet panel: AVALON, its planet, the four elements live: wind = power,
 //                 earth = memory, fire = processor temperature (°C), water = the song playing
@@ -73,6 +73,127 @@ Variants {
 						Row {
 							anchors { left: parent.left; right: parent.right; top: parent.top; topMargin: -4 }
 							Repeater {
+								model: [0, 10, 20, 30, 40]
+								delegate: Text {
+									required property var modelData
+									width: parent.width / 4.6
+									text: modelData
+									color: Theme.mist
+									font.family: Theme.fontMono
+									font.pixelSize: 9
+								}
+							}
+						}
+						// two bars: battery (fire when low) over sound
+						Rectangle {
+							x: 0; y: 12; height: 3; width: parent.width - 6
+							color: "#2a3a5c"
+							Rectangle {
+								height: parent.height
+								width: parent.width * (Stats.hasBattery ? Stats.charge : 1)
+								color: Stats.charge < 0.15 ? Theme.fire : Stats.charging ? Theme.cyan : Theme.fire
+							}
+						}
+						Rectangle {
+							x: 0; y: 17; height: 2; width: parent.width - 6
+							color: "#22304e"
+							Rectangle {
+								height: parent.height
+								width: parent.width * Stats.volume
+								color: Stats.muted ? Theme.textDim : Theme.wind
+							}
+						}
+					}
+				}
+			}
+
+			// ============================================================= bottom strip
+			PanelWindow {
+				screen: screenHud.modelData
+				anchors { bottom: true; left: true; right: true }
+				implicitHeight: 128
+				color: "transparent"
+				WlrLayershell.namespace: "garden-hud"
+
+				// ---- the planet panel
+				Item {
+					anchors { left: parent.left; bottom: parent.bottom; leftMargin: 22; bottomMargin: 14 }
+					width: 326; height: 108
+
+					// header tab: PLANET, with its red light
+					Shape {
+						width: 160; height: 20
+						preferredRendererType: Shape.CurveRenderer
+						ShapePath {
+							fillColor: Theme.panelSolid
+							strokeColor: Theme.edgeBright
+							strokeWidth: 1
+							startX: 0; startY: 0
+							PathLine { x: 160; y: 0 }
+							PathLine { x: 148; y: 20 }
+							PathLine { x: 0; y: 20 }
+							PathLine { x: 0; y: 0 }
+						}
+					}
+					Text {
+						x: 8; y: 2
+						text: "PLANET"
+						color: Theme.text
+						font.family: Theme.font
+						font.pixelSize: Theme.small
+						font.bold: true
+						font.letterSpacing: 1
+					}
+					Rectangle { x: 74; y: 7; width: 28; height: 6; color: Theme.fire }
+
+					HudPanel {
+						y: 24; width: parent.width; height: 84
+						cut: 14
+						fill: "#e00c1630"
+						stroke: Theme.edgeBright
+						strokeWidth: 2
+						cutTopLeft: true; cutBottomRight: true
+
+						Text {
+							text: "AVALON"
+							color: Theme.text
+							font.family: Theme.font
+							font.pixelSize: Theme.normal + 1
+							font.bold: true
+						}
+						// the planet: a blue world with a green ring, over grid lines
+						Item {
+							x: 6; y: 18; width: 120; height: 52
+							Repeater {
+								model: 5
+								delegate: Rectangle {
+									required property int index
+									y: index * 10 + 4; width: 116; height: 1; color: "#28406a"
+								}
+							}
+							Rectangle {
+								x: 34; y: 2; width: 46; height: 46; radius: 23
+								gradient: Gradient {
+									GradientStop { position: 0; color: "#7fb0ff" }
+									GradientStop { position: 1; color: "#2c64d8" }
+								}
+							}
+							Shape {
+								anchors.fill: parent
+								ShapePath {
+									strokeColor: Theme.wind
+									strokeWidth: 3
+									fillColor: "transparent"
+									PathArc { x: 112; y: 30; radiusX: 56; radiusY: 9 }
+									startX: 2; startY: 30
+								}
+							}
+						}
+						// the four elements, live
+						Column {
+							x: 150; y: 6
+							spacing: 6
+							Repeater {
 								model: [
 									{ glyph: "風", color: Theme.wind,  value: () => Stats.charge,       number: () => Math.round(Stats.charge * 100) },
 									{ glyph: "土", color: Theme.earth, value: () => Stats.memory,       number: () => Math.round(Stats.memory * 100) },
@@ -89,7 +210,7 @@ Variants {
 										font.bold: true
 									}
 									ElementMeter {
-										implicitWidth: 78; implicitHeight: 9
+										implicitWidth: 92; implicitHeight: 9
 										color: modelData.color
 										value: modelData.value()
 									}

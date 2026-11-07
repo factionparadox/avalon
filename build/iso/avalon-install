@@ -188,6 +188,10 @@ steps() {
 	set_grub GRUB_DISABLE_LINUX_UUID true
 	set_grub GRUB_DISABLE_LINUX_PARTUUID false
 	set_grub GRUB_DISTRIBUTOR Avalon
+	# one "Avalon" entry for the current kernel; the versioned files (and kernel backups) go under
+	# "Advanced options" instead of each getting a top-level entry of its own
+	set_grub GRUB_DISABLE_SUBMENU false
+	set_grub GRUB_TOP_LEVEL /boot/vmlinuz-generic
 	set_grub GRUB_TIMEOUT 5
 	set_grub GRUB_GFXMODE auto
 	set_grub GRUB_TERMINAL_OUTPUT gfxterm
