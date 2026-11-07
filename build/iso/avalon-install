@@ -51,17 +51,17 @@ while :; do
 	d --title " You " --msgbox "\n\"$USER_NAME\" won't do: small letters, numbers, - and _, starting with a letter." 9 64
 done
 
-pw() {   # ask twice until both match; the password on stdout
-	local who=$1 a b
+pw() {   # ask twice until both match; the password on stdout. $2: an optional note under the question
+	local who=$1 note=${2:+\n$2} a b
 	while :; do
-		a=$(d --title " $who " --insecure --passwordbox "\nChoose a password for $who:" 10 64) || return 1
+		a=$(d --title " $who " --insecure --passwordbox "\nChoose a password for $who:$note" 11 64) || return 1
 		b=$(d --title " $who " --insecure --passwordbox "\nOnce more, to be sure:" 10 64) || return 1
 		[ -n "$a" ] && [ "$a" = "$b" ] && { printf '%s' "$a"; return 0; }
 		d --title " $who " --msgbox "\nThose didn't match (or were empty). Again." 8 50
 	done
 }
 USER_PW=$(pw "$USER_NAME") || quit "Stopped; nothing was touched."
-ROOT_PW=$(pw "root (the administrator; day to day you use sudo)") || quit "Stopped; nothing was touched."
+ROOT_PW=$(pw root "(the administrator; day to day you use sudo)") || quit "Stopped; nothing was touched."
 
 disk_info() {   # "953.9 GB  WD_BLACK SN850X" for a disk name, from /sys
 	local b=/sys/block/$1 sectors model
