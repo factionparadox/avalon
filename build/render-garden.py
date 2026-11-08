@@ -4,7 +4,8 @@ would have drawn it. Original scene, in the spirit of late-1990s PlayStation gar
 
   - a meadow plateau with a pond, its cut-away earth face towards the camera
   - forest walls of camera-facing billboard pines, distant hills
-  - low-poly flat-shaded objects: a rock with Pasha on it, a crystal prism, floating beacons
+  - low-poly flat-shaded objects: a boulder with Pasha on it, a crystal prism, floating beacons
+  - gourds in their leaves, red bushes, tan mounds and grass tufts, with shadows under things
   - perspective-correct ground with unfiltered (nearest) textures, distance fog,
     480x320, 15-bit colour with ordered dithering, scaled up 6x with hard pixels
 
@@ -62,8 +63,10 @@ def fogged(colour, depth):
 def tex(size, base, spread, seed, grain=1.0, levels=5):
     g = np.random.default_rng(seed)
     n = g.random((size, size)).astype(np.float32)
-    im = Image.fromarray((n * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(grain))
-    n = np.asarray(im).astype(np.float32) / 255
+    # blurred with wrap-around, so a tile's edges meet the next tile's without a seam
+    big = np.tile(n, (3, 3))
+    im = Image.fromarray((big * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(grain))
+    n = np.asarray(im).astype(np.float32)[size:2 * size, size:2 * size] / 255
     n = (n - n.min()) / max(1e-6, n.max() - n.min())
     q = np.floor(n * levels) / (levels - 1)
     t = np.zeros((size, size, 3), np.float32)
@@ -72,7 +75,8 @@ def tex(size, base, spread, seed, grain=1.0, levels=5):
     return np.clip(t, 0, 255)
 
 
-GRASS = tex(64, (84, 120, 66), 0.55, 1, grain=0.8, levels=6)
+GRASS = tex(64, (66, 112, 50), 0.75, 1, grain=0.9, levels=6)
+GRASS2 = tex(64, (52, 92, 44), 0.6, 4, grain=2.2, levels=4)
 WATER = tex(32, (150, 152, 184), 0.18, 2, grain=1.6, levels=4)
 SOIL = tex(64, (58, 44, 40), 0.7, 3, grain=1.2, levels=5)
 
@@ -98,7 +102,7 @@ def ground_and_sky():
     img[:] = sky_low * (1 - t) + sky_top * t
 
     # the plateau: ground plane y = 0, from the cut-away edge at z = EDGE onwards
-    EDGE = 5.0
+    EDGE = 4.0
     with np.errstate(divide='ignore', invalid='ignore'):
         tg = np.where(wy < -1e-4, -CAM[1] / wy, np.inf)
     with np.errstate(invalid='ignore'):
@@ -108,19 +112,25 @@ def ground_and_sky():
     # grass: nearest-sampled, tiled every 2 m; a little brighter further off (the mist's light)
     u = np.floor(gx * 32).astype(int) % 64
     v = np.floor(gz * 32).astype(int) % 64
-    grass = GRASS[v, u]
-    shade = np.clip(1.15 - 0.012 * gz, 0.75, 1.15)[:, :, None]
-    # large soft patches of light and shadow across the meadow
-    patch = (np.sin(gx * 0.31 + 1.3) * np.sin(gz * 0.23) * 0.12 + 1)[:, :, None]
-    gcol = grass * shade * patch
+    # two grasses: the fine one, and a coarser darker one in clumps across the meadow
+    u2 = np.floor(gx * 20).astype(int) % 64
+    v2 = np.floor(gz * 20).astype(int) % 64
+    clump = (np.sin(gx * 2.3 + 0.4) + np.sin(gz * 2.9 + gx * 0.9) + np.sin(gx * 1.1 - gz * 1.7)) > 1.6
+    grass = np.where(clump[:, :, None], GRASS2[v2, u2], GRASS[v, u])
+    shade = np.clip(1.08 - 0.010 * gz, 0.72, 1.08)[:, :, None]
+    # large soft patches of light and shadow across the meadow, and the forest's shade at its edge
+    patch = (np.sin(gx * 0.31 + 1.3) * np.sin(gz * 0.23) * 0.08 + 1)[:, :, None]
+    edge_shade = (1 - 0.35 * np.clip((gz - 20) / 10, 0, 1))[:, :, None]
+    gcol = grass * shade * patch * edge_shade
     # the pond: an ellipse holding the sky
     pond = ((gx - 3.6) / 3.8) ** 2 + ((gz - 13.0) / 1.7) ** 2 < 1
     wu = np.floor(gx * 12).astype(int) % 32
     wv = np.floor(gz * 24).astype(int) % 32
-    water = WATER[wv, wu] * 0.6 + (MIST * 0.4)
+    water = WATER[wv, wu] * 0.55 + np.array([60, 66, 96], np.float32) * 0.45
     rim = (((gx - 3.6) / 4.0) ** 2 + ((gz - 13.0) / 1.85) ** 2 < 1) & ~pond
     gcol = np.where(pond[:, :, None], water, gcol)
-    gcol = np.where(rim[:, :, None], np.array([150, 160, 130], np.float32), gcol)
+    stones = ((np.floor(gx * 6) + np.floor(gz * 9)) % 3 == 0)[:, :, None]
+    gcol = np.where(rim[:, :, None], np.where(stones, np.array([128, 126, 134], np.float32), np.array([96, 98, 92], np.float32)), gcol)
     img = np.where(on_ground[:, :, None], gcol, img)
     depth = np.where(on_ground, tg, depth)
 
@@ -268,10 +278,21 @@ def prism(c, r, h, sides=6):
 
 
 def rock(c, s):
+    """a boulder: a jittered, flattened ring of faces under a lumpy top"""
     x, y, z = c
-    v = [(x - 1.0 * s, y, z - 0.7 * s), (x + 1.1 * s, y, z - 0.6 * s), (x + 1.2 * s, y, z + 0.8 * s), (x - 0.9 * s, y, z + 0.7 * s),
-         (x - 0.6 * s, y + 0.55 * s, z - 0.3 * s), (x + 0.7 * s, y + 0.6 * s, z - 0.2 * s), (x + 0.6 * s, y + 0.5 * s, z + 0.5 * s), (x - 0.5 * s, y + 0.45 * s, z + 0.4 * s)]
-    f = [(0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7), (4, 5, 6, 7)]
+    r = random.Random(7)
+    n = 9
+    base = [(x + s * 1.15 * math.cos(2 * math.pi * k / n) * r.uniform(0.85, 1.1), y,
+             z + s * 0.85 * math.sin(2 * math.pi * k / n) * r.uniform(0.85, 1.1)) for k in range(n)]
+    mid = [(x + s * 0.95 * math.cos(2 * math.pi * (k + 0.5) / n) * r.uniform(0.85, 1.05), y + s * r.uniform(0.38, 0.5),
+            z + s * 0.7 * math.sin(2 * math.pi * (k + 0.5) / n) * r.uniform(0.85, 1.05)) for k in range(n)]
+    top = (x, y + s * 0.62, z)
+    v = base + mid + [top]
+    f = []
+    for k in range(n):
+        f.append((k, (k + 1) % n, n + k))
+        f.append(((k + 1) % n, n + (k + 1) % n, n + k))
+        f.append((n + k, n + (k + 1) % n, 2 * n))
     return v, f
 
 
@@ -288,15 +309,83 @@ def sprite_pasha():
     return out
 
 
-def frond_sprite():
-    s = Image.new('RGBA', (40, 48), (0, 0, 0, 0))
+def gourd_sprite(seed):
+    """an orange, spotted gourd sitting in broad leaves"""
+    r = random.Random(seed)
+    s = Image.new('RGBA', (60, 50), (0, 0, 0, 0))
     d = ImageDraw.Draw(s)
-    d.line([(20, 48), (20, 16)], fill=(196, 188, 170, 255), width=2)
-    for k in range(12):
-        a = math.radians(-180 + k * 15)
-        d.line([(20, 16), (20 + math.cos(a) * 18, 16 + math.sin(a) * 9)], fill=(150, 34, 32, 255), width=2)
-        d.line([(20, 16), (20 + math.cos(a) * 12, 14 + math.sin(a) * 6)], fill=(200, 64, 48, 255), width=1)
+
+    def leaf(a, length, shade):
+        ex, ey = 30 + math.cos(a) * length, 44 + math.sin(a) * length * 0.3
+        nx, ny = -math.sin(a) * 8, math.cos(a) * 4
+        c = (int(96 * shade), int(158 * shade), int(58 * shade), 255)
+        pts = [(30, 44), (30 + (ex - 30) * 0.5 + nx, 44 + (ey - 44) * 0.5 + ny), (ex, ey),
+               (30 + (ex - 30) * 0.5 - nx, 44 + (ey - 44) * 0.5 - ny)]
+        d.polygon(pts, fill=c, outline=(34, 70, 28, 255))
+        d.line([(30, 44), (ex, ey)], fill=(int(140 * shade), int(196 * shade), 92, 255))
+    for k in range(5):                                  # leaves behind
+        leaf(math.radians(185 + k * 42 + r.uniform(-8, 8)), r.uniform(24, 29), 0.78)
+    d.ellipse([13, 16, 47, 46], fill=(176, 96, 28, 255))   # the body, its shaded underside
+    d.ellipse([14, 15, 44, 41], fill=(214, 128, 40, 255))
+    d.ellipse([17, 16, 34, 32], fill=(240, 166, 66, 255))  # its lit side
+    for x0, bend in ((22, -2), (30, 0), (38, 2)):          # ribs
+        d.line([(x0, 17), (x0 + bend, 30), (x0, 44)], fill=(160, 84, 26, 255), width=1)
+    for _ in range(16):                                 # spots
+        x, y = r.uniform(16, 44), r.uniform(19, 42)
+        d.rectangle([x, y, x + 1, y + 1], fill=(112, 58, 24, 255))
+    d.polygon([(29, 10), (32, 10), (31, 17), (29, 17)], fill=(96, 120, 52, 255))  # stalk
+    for a in (15, 70, 115, 165):                         # leaves in front, low and spreading
+        leaf(math.radians(a + r.uniform(-8, 8)), r.uniform(20, 27), 1.0)
     return s
+
+
+def bush_sprite(seed):
+    """a low red-leaved bush"""
+    r = random.Random(seed)
+    s = Image.new('RGBA', (52, 40), (0, 0, 0, 0))
+    d = ImageDraw.Draw(s)
+    for _ in range(60):
+        x, y = r.gauss(26, 10), r.gauss(24, 7)
+        rr = r.uniform(2, 4)
+        c = r.choice([(150, 40, 32), (186, 58, 40), (214, 86, 52), (120, 30, 30)])
+        d.ellipse([x - rr, y - rr * 0.7, x + rr, y + rr * 0.7], fill=c + (255,))
+    return s
+
+
+def mound_sprite(seed):
+    """a cluster of small tan cones, like termite mounds or puffballs"""
+    r = random.Random(seed)
+    s = Image.new('RGBA', (44, 34), (0, 0, 0, 0))
+    d = ImageDraw.Draw(s)
+    for cx, h, w in ((14, 28, 9), (28, 20, 8), (36, 13, 6)):
+        d.polygon([(cx - w, 33), (cx, 33 - h), (cx + w, 33)], fill=(186, 150, 104, 255))
+        d.polygon([(cx, 33 - h), (cx + w, 33), (cx + 1, 33)], fill=(146, 112, 76, 255))
+        for _ in range(h // 3):
+            y = r.uniform(33 - h * 0.8, 32); x = cx + r.uniform(-w, w) * (33 - y) / h * 0.9
+            d.point((x, y), fill=(110, 82, 56, 255))
+    return s
+
+
+def tuft_sprite(seed):
+    r = random.Random(seed)
+    s = Image.new('RGBA', (30, 30), (0, 0, 0, 0))
+    d = ImageDraw.Draw(s)
+    for _ in range(16):
+        x = r.uniform(4, 26)
+        d.line([(15, 30), (x, r.uniform(2, 14))], fill=(78 + r.randrange(40), 130 + r.randrange(40), 60, 255), width=1)
+    return s
+
+
+def ground_shadow(img, depthbuf, x, z, rx, rz, strength=0.45):
+    """a soft dark patch on the meadow under something standing (or floating) at (x, z)"""
+    pts = [project((x + rx * math.cos(t), 0.0, z + rz * math.sin(t))) for t in np.linspace(0, 2 * math.pi, 24)]
+    if any(p is None for p in pts):
+        return
+    layer = Image.new('L', (RW, RH), 0)
+    ImageDraw.Draw(layer).polygon([(p[0], p[1]) for p in pts], fill=255)
+    m = np.asarray(layer.filter(ImageFilter.GaussianBlur(1.2))).astype(np.float32) / 255
+    m *= (depthbuf > z - rz * 2)                  # on the ground, not over nearer things
+    img *= (1 - strength * m)[:, :, None]
 
 
 def bubble_sprite():
@@ -344,42 +433,71 @@ def render():
     sh = np.asarray(shafts.filter(ImageFilter.GaussianBlur(6))).astype(np.float32)
     img = img * (1 - sh[:, :, 3:4] / 255) + sh[:, :, :3] * (sh[:, :, 3:4] / 255)
 
-    # plants of the garden
-    frond = frond_sprite()
-    for x, z, h in ((-3.8, 7.2, 0.9), (6.4, 10.5, 1.0), (-5.6, 13, 1.1), (0.4, 16, 0.9)):
-        draw_billboard(img, depth, frond, (x, 0, z), h)
+    # plants of the garden: gourds in their leaves, red bushes, tan mounds, tufts of grass
+    plants = ((-5.6, 14.0, 1.0, bush_sprite(1)), (6.2, 16.5, 1.1, bush_sprite(2)), (-6.4, 19.5, 0.9, bush_sprite(8)),
+              (-2.9, 12.6, 0.5, mound_sprite(3)), (2.7, 6.2, 0.42, mound_sprite(6)),
+              (-3.3, 7.0, 0.85, gourd_sprite(4)), (4.7, 11.6, 0.9, gourd_sprite(5)), (-1.7, 5.4, 0.6, gourd_sprite(9)))
+    for x, z, h, spr in plants:
+        ground_shadow(img, depth, x, z, h * 0.55, h * 0.3, 0.35)
+    for x, z, h, spr in sorted(plants, key=lambda p: -p[1]):
+        draw_billboard(img, depth, spr, (x, 0, z), h)
+    for k in range(26):
+        x, z = rng.uniform(-6, 6), rng.uniform(4.6, 18)
+        draw_billboard(img, depth, tuft_sprite(k), (x, 0, z), rng.uniform(0.2, 0.32))
 
     # the crystal prism, violet, on the meadow
+    ground_shadow(img, depth, -2.0, 9.05, 0.55, 0.35)
     v, f = prism((-2.1, 0, 9.0), 0.36, 1.8)
-    draw_mesh(img, depth, v, f, (176, 150, 232), alpha=0.82, edges=(236, 226, 255))
+    draw_mesh(img, depth, v, f, (168, 142, 226), alpha=0.86, edges=(122, 102, 176))
 
     # pixies asleep in bubbles
     bub = bubble_sprite()
+    ground_shadow(img, depth, -0.45, 8.0, 0.4, 0.22, 0.3)
+    ground_shadow(img, depth, 0.42, 7.3, 0.25, 0.14, 0.3)
     draw_billboard(img, depth, bub, (-0.5, 0.1, 8.0), 0.8)
     draw_billboard(img, depth, bub, (0.4, 0.0, 7.3), 0.5)
 
     # Pasha on his rock, beside the pond
+    ground_shadow(img, depth, 2.0, 8.6, 1.25, 0.8)
     v, f = rock((1.9, 0, 8.6), 0.9)
-    draw_mesh(img, depth, v, f, (150, 152, 168), cull=False)
+    draw_mesh(img, depth, v, f, (142, 140, 150))
     draw_billboard(img, depth, sprite_pasha(), (1.85, 0.40, 8.55), 1.55)
 
-    # the beacons: dark octahedra with cyan edges, floating above the meadow
-    for c, r in (((-3.8, 3.0, 11.5), 0.42), ((5.6, 2.8, 15.0), 0.38)):
-        v, f = octahedron(c, r, r * 1.8)
-        draw_mesh(img, depth, v, f, (26, 28, 44), edges=(140, 236, 255))
+    # the beacons: solid dark octahedra floating over the meadow, a red band and jewel at the
+    # waist, four cyan blades sweeping out from it, and a short spike above and below
+    for c, r in (((-3.8, 3.0, 11.5), 0.40), ((5.6, 2.8, 15.0), 0.36)):
+        ground_shadow(img, depth, c[0], c[2], r * 1.1, r * 0.7, 0.28)
+        v, f = octahedron(c, r, r * 1.5)
+        draw_mesh(img, depth, v, f, (44, 44, 58))
         p = project(c)
-        if p:
-            x, y, z = p
-            d = ImageDraw.Draw(layer := Image.new('RGBA', (RW, RH), (0, 0, 0, 0)))
-            s = F * r * 1.9 / z
-            for sx in (-1, 1):
-                d.line([(x + sx * s, y - s * 0.6), (x + sx * s * 1.3, y), (x + sx * s, y + s * 0.6)], fill=(95, 216, 240, 255))
-            d.rectangle([x - 1, y - 1, x + 1, y + 1], fill=(255, 60, 80, 255))
-            arr = np.asarray(layer).astype(np.float32)
-            m = arr[:, :, 3] > 0
-            img[m] = arr[:, :, :3][m]
+        if not p:
+            continue
+        x, y, z = p
+        s_ = F * r / z                     # the beacon's half-width on screen
+        layer = Image.new('RGBA', (RW, RH), (0, 0, 0, 0))
+        d = ImageDraw.Draw(layer)
+        # spikes
+        h = s_ * 1.5
+        d.line([(x, y - h), (x, y - h * 1.35)], fill=(20, 20, 28, 255), width=2)
+        d.line([(x, y + h), (x, y + h * 1.35)], fill=(20, 20, 28, 255), width=2)
+        # the red band and jewel
+        d.line([(x - s_ * 0.92, y), (x + s_ * 0.92, y)], fill=(196, 34, 44, 255), width=max(1, int(s_ * 0.18)))
+        d.polygon([(x, y - s_ * 0.22), (x + s_ * 0.2, y), (x, y + s_ * 0.22), (x - s_ * 0.2, y)], fill=(255, 70, 82, 255))
+        # four blades: each a thin crescent from near the waist, out and away
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                p0 = (x + sx * s_ * 0.55, y + sy * s_ * 0.35)
+                p1 = (x + sx * s_ * 1.25, y + sy * s_ * 1.05)
+                p2 = (x + sx * s_ * 1.55, y + sy * s_ * 1.75)
+                q1 = (x + sx * s_ * 0.95, y + sy * s_ * 1.25)
+                d.polygon([p0, p1, p2, q1], fill=(110, 226, 246, 255))
+                d.line([p0, p1, p2], fill=(210, 250, 255, 255), width=1)
+        arr = np.asarray(layer).astype(np.float32)
+        fa = fog_amount(z)
+        m = arr[:, :, 3] > 0
+        img[m] = (arr[:, :, :3] * (1 - fa) + MIST * fa)[m]
 
-    # sparks, and the red targeting line
+    # sparks drifting in the mist
     out = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).convert('RGBA')
     glow = Image.new('RGBA', (RW, RH), (0, 0, 0, 0))
     gd = ImageDraw.Draw(glow)
@@ -388,9 +506,6 @@ def render():
         gd.ellipse([x - 3, y - 3, x + 3, y + 3], fill=c + (70,))
         gd.rectangle([x - 1, y - 1, x, y], fill=c + (255,))
     out.alpha_composite(glow)
-    b = project((-3.8, 3.0, 11.5))
-    if b:
-        ImageDraw.Draw(out).line([(60, RH), (b[0], b[1])], fill=(220, 36, 36, 255), width=1)
 
     # vignette, 15-bit colour, ordered dither, then the hard-pixel scale-up
     a = np.asarray(out.convert('RGB')).astype(np.float32)
