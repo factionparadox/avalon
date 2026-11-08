@@ -42,7 +42,10 @@ Scope {
 
 			Image {
 				anchors.fill: parent
-				source: "file:///usr/share/avalon/garden-wallpaper.png"
+				// the default built into your stick, if there is one, else the garden
+				source: "file:///usr/share/avalon/local-wallpaper.png"
+				onStatusChanged: if (status === Image.Error) source = "file:///usr/share/avalon/garden-wallpaper.png"
+				smooth: false                 // hard pixels, as the garden is drawn
 				fillMode: Image.PreserveAspectCrop
 				opacity: 0.45
 			}

@@ -80,6 +80,21 @@ rsync -a --delete --exclude=.git "$WORK/liveslak/" "$LS/"
 # Avalon's packages as liveslak's local module "avalon"
 mkdir -p "$LS/local64/avalon"
 cp "$PKGS"/*.txz "$LS/local64/avalon/"
+# your own default wallpaper, if you've put one in local/ (kept out of git: local/ is ignored).
+# It goes on your stick as a small package of its own; the Garden, lock screen and login screen
+# use it in place of the stock garden
+LOCAL_WALL=$(ls "$HERE"/local/wallpaper.{png,jpg,jpeg} 2>/dev/null | head -1 || true)
+if [[ -n $LOCAL_WALL ]]; then
+  say "Your wallpaper ($LOCAL_WALL) as the stick's default"
+  lp=$ROOT/tmp/avalon-local-wallpaper
+  rm -rf "$lp"; mkdir -p "$lp/usr/share/avalon" "$lp/install"
+  # as it is: the Garden scales it up with hard pixels, so a small console screenshot stays crisp
+  install -m644 "$LOCAL_WALL" "$lp/usr/share/avalon/local-wallpaper.png"
+  printf 'avalon-local-wallpaper: avalon-local-wallpaper (your own default wallpaper)\navalon-local-wallpaper:\navalon-local-wallpaper: Built into this stick from local/ in your Avalon checkout.\n' > "$lp/install/slack-desc"
+  run sh -c 'cd /tmp/avalon-local-wallpaper && /sbin/makepkg -l y -c n /tmp/avalon-local-wallpaper-1-noarch-1_avalon.txz >/dev/null'
+  mv "$ROOT/tmp/avalon-local-wallpaper-1-noarch-1_avalon.txz" "$LS/local64/avalon/"
+  rm -rf "$lp"
+fi
 # Avalon's settings and live session (build/iso/make_slackware_live.conf), and its installer
 cp "$HERE/build/iso/make_slackware_live.conf" "$LS/make_slackware_live.conf"
 install -m755 "$HERE/build/iso/avalon-install" "$LS/avalon-install"
