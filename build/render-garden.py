@@ -424,50 +424,86 @@ ELEMENTS = {   # Avalon's four elements, as the HUD has them: hair, dress, wing 
 }
 
 
-def pixie(element, flip=False):
-    """an elemental pixie in flight, drawn large and shaded, then shrunk like a pre-rendered
-    sprite: two pairs of veined, see-through wings, a dress, flowing hair. Avalon's own design"""
+WING_SHAPES = {   # (centre x, centre y, half-length, half-width, angle) for each wing
+    'butterfly': ((52, 62, 44, 24, 30), (108, 62, 44, 24, -30), (58, 98, 30, 16, -25), (102, 98, 30, 16, 25)),
+    'dragonfly': ((44, 66, 56, 9, 12), (116, 66, 56, 9, -12), (46, 80, 50, 8, -6), (114, 80, 50, 8, 6)),
+    'moth':      ((50, 72, 46, 30, 18), (110, 72, 46, 30, -18)),
+    'petal':     ((56, 54, 36, 14, 55), (104, 54, 36, 14, -55), (52, 86, 34, 13, 20), (108, 86, 34, 13, -20)),
+}
+
+
+def _wing(rw, rh, ang, tint, mirrored, spots=False):
+    yy, xx = np.mgrid[0:140, 0:140].astype(np.float32)
+    t = math.radians(ang)
+    X = ((xx - 70) * math.cos(t) + (yy - 70) * math.sin(t)) / rw
+    Y = (-(xx - 70) * math.sin(t) + (yy - 70) * math.cos(t)) / rh
+    r2 = X * X + Y * Y
+    inside = r2 <= 1
+    al = np.where(inside, 0.45 + 0.5 * r2 ** 3, 0)
+    col = np.ones((140, 140, 3), np.float32) * np.array(tint, np.float32) * (0.85 + 0.3 * (1 - r2[:, :, None]).clip(0, 1))
+    if spots:                                              # eye-spots, as moths have
+        m = ((X - 0.35) ** 2 + Y ** 2 * 2) < 0.06
+        col[m] = col[m] * 0.6
+        al = np.where(m & inside, 0.9, al)
+    img = Image.fromarray(np.dstack([col.clip(0, 255), al * 255]).astype(np.uint8), 'RGBA')
+    d = ImageDraw.Draw(img)
+    for k in (-0.35, 0.0, 0.35):                           # veins fanning from the root
+        ex = 70 + math.cos(t + k) * rw * 0.85 * (-1 if mirrored else 1)
+        ey = 70 + math.sin(t + k) * rw * 0.85 * (-1 if mirrored else 1)
+        d.line([(70, 70), (ex, ey)], fill=tuple(min(255, c + 40) for c in tint) + (140,))
+    return img
+
+
+def pixie(element, wings='butterfly', hair_style='long', pose='fly', flip=False):
+    """one of Avalon's pixies, drawn large and shaded, then shrunk like a pre-rendered sprite.
+    wings: butterfly, dragonfly, moth, petal; hair: long, bob, twintails; pose: fly, sit, kneel"""
     hair, dress, wing = ELEMENTS[element]
     W, H = 160, 190
     s = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-    # wings: soft gradient ellipses, rotated, with a brighter rim and veins
-    for (cx, cy, rw, rh, ang) in ((52, 62, 44, 22, 30), (108, 62, 44, 22, -30), (58, 98, 30, 15, -25), (102, 98, 30, 15, 25)):
-        yy, xx = np.mgrid[0:120, 0:120].astype(np.float32)
-        t = math.radians(ang)
-        X = ((xx - 60) * math.cos(t) + (yy - 60) * math.sin(t)) / rw
-        Y = (-(xx - 60) * math.sin(t) + (yy - 60) * math.cos(t)) / rh
-        r2 = X * X + Y * Y
-        inside = r2 <= 1
-        al = np.where(inside, 0.45 + 0.5 * r2 ** 3, 0)
-        col = np.ones((120, 120, 3), np.float32) * np.array(wing, np.float32)
-        col = col * (0.85 + 0.3 * (1 - r2[:, :, None]).clip(0, 1))
-        wimg = Image.fromarray(np.dstack([col.clip(0, 255), al * 255]).astype(np.uint8), 'RGBA')
-        wd = ImageDraw.Draw(wimg)
-        for k in (-0.5, 0, 0.5):                           # veins
-            ex = 60 + math.cos(t + k * 0.5) * rw * 0.9
-            ey = 60 + math.sin(t + k * 0.5) * rw * 0.9 * (1 if cx > 80 else 1)
-            wd.line([(60, 60), (ex if cx > 80 else 120 - ex, ey)], fill=tuple(min(255, c + 30) for c in wing) + (150,))
-        s.alpha_composite(wimg, (int(cx - 60), int(cy - 60)))
+    for (cx, cy, rw, rh, ang) in WING_SHAPES[wings]:
+        if pose != 'fly':                                  # resting: wings raised and closer in
+            cy -= 8; ang = ang * 1.6
+        s.alpha_composite(_wing(rw, rh, ang, wing, cx < 80, spots=(wings == 'moth')), (int(cx - 70), int(cy - 70)))
     d = ImageDraw.Draw(s)
     skin, skin_sh = (246, 224, 210), (220, 190, 178)
-    # legs, trailing behind as she flies
-    d.line([(76, 122), (68, 160), (62, 176)], fill=skin_sh, width=5)
-    d.line([(84, 122), (88, 158), (96, 172)], fill=skin, width=5)
-    # the dress, shaded down its right side
-    d.polygon([(72, 74), (88, 74), (102, 130), (58, 130)], fill=dress)
-    d.polygon([(82, 74), (88, 74), (102, 130), (86, 130)], fill=tuple(int(c * 0.78) for c in dress))
-    d.line([(60, 130), (100, 130)], fill=tuple(min(255, int(c * 1.2)) for c in dress), width=2)
-    # arms out, as if gliding
-    d.line([(73, 80), (56, 96), (50, 106)], fill=skin, width=4)
-    d.line([(87, 80), (104, 92), (112, 100)], fill=skin_sh, width=4)
-    # head and hair: long, streaming back
-    d.polygon([(66, 40), (96, 40), (104, 86), (92, 70), (86, 92), (72, 70), (58, 84)], fill=hair)
-    d.ellipse([68, 38, 92, 64], fill=skin)
-    d.ellipse([84, 44, 92, 62], fill=skin_sh)
-    d.chord([64, 30, 96, 56], 180, 360, fill=hair)        # fringe
-    d.ellipse([72, 50, 75, 53], fill=(60, 50, 70))         # eyes
-    d.ellipse([80, 50, 83, 53], fill=(60, 50, 70))
-    # a faint glow of her element about her
+    dark = tuple(int(c * 0.76) for c in dress)
+    if pose == 'fly':                                      # legs trailing, arms out, gliding
+        d.line([(76, 122), (68, 160), (62, 176)], fill=skin_sh, width=5)
+        d.line([(84, 122), (88, 158), (96, 172)], fill=skin, width=5)
+        d.polygon([(72, 74), (88, 74), (102, 130), (58, 130)], fill=dress)
+        d.polygon([(82, 74), (88, 74), (102, 130), (86, 130)], fill=dark)
+        d.line([(73, 80), (56, 96), (50, 106)], fill=skin, width=4)
+        d.line([(87, 80), (104, 92), (112, 100)], fill=skin_sh, width=4)
+    elif pose == 'sit':                                    # sitting, knees up, hands in her lap
+        d.polygon([(72, 74), (88, 74), (98, 128), (60, 128)], fill=dress)
+        d.polygon([(82, 74), (88, 74), (98, 128), (84, 128)], fill=dark)
+        d.line([(66, 126), (60, 150), (70, 176)], fill=skin_sh, width=5)
+        d.line([(92, 126), (100, 150), (92, 176)], fill=skin, width=5)
+        d.line([(73, 82), (68, 104), (78, 116)], fill=skin, width=4)
+        d.line([(87, 82), (92, 104), (82, 116)], fill=skin_sh, width=4)
+    else:                                                  # kneeling, reaching down to a plant
+        d.polygon([(70, 80), (88, 76), (104, 140), (60, 140)], fill=dress)
+        d.polygon([(82, 77), (88, 76), (104, 140), (88, 140)], fill=dark)
+        d.line([(66, 140), (84, 176), (110, 178)], fill=skin_sh, width=5)
+        d.line([(88, 84), (106, 120), (118, 150)], fill=skin, width=4)
+        d.line([(74, 86), (92, 124), (110, 152)], fill=skin_sh, width=4)
+    hy = 0 if pose != 'kneel' else 8                       # head drops a little when kneeling
+    if hair_style == 'long':
+        d.polygon([(66, 40 + hy), (96, 40 + hy), (104, 86 + hy), (92, 70 + hy), (86, 92 + hy), (72, 70 + hy), (58, 84 + hy)], fill=hair)
+    elif hair_style == 'twintails':
+        d.ellipse([52, 48 + hy, 66, 92 + hy], fill=hair)
+        d.ellipse([94, 48 + hy, 108, 92 + hy], fill=hair)
+    else:                                                  # a bob
+        d.ellipse([62, 34 + hy, 98, 70 + hy], fill=hair)
+    d.ellipse([68, 38 + hy, 92, 64 + hy], fill=skin)
+    d.ellipse([84, 44 + hy, 92, 62 + hy], fill=skin_sh)
+    d.chord([64, 30 + hy, 96, 56 + hy], 180, 360, fill=hair)
+    if pose == 'kneel':                                    # eyes down, on her work
+        d.line([(72, 54 + hy), (75, 54 + hy)], fill=(60, 50, 70), width=2)
+        d.line([(80, 54 + hy), (83, 54 + hy)], fill=(60, 50, 70), width=2)
+    else:
+        d.ellipse([72, 50 + hy, 75, 53 + hy], fill=(60, 50, 70))
+        d.ellipse([80, 50 + hy, 83, 53 + hy], fill=(60, 50, 70))
     halo = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     ImageDraw.Draw(halo).ellipse([30, 30, 130, 170], fill=wing + (60,))
     halo = halo.filter(ImageFilter.GaussianBlur(14))
@@ -583,11 +619,19 @@ def render():
         ground_shadow(img, depth, c[0], c[2], r * 1.2, r * 0.7, 0.32)
         beacon(img, depth, c, r)
 
-    # the four pixies, one of each element, on the wing about the garden
-    for x, y, z, el, flip, size in ((-2.9, 0.95, 8.4, 'fire', False, 1.25), (1.7, 1.25, 10.5, 'water', True, 1.2),
-                                    (-0.3, 1.9, 13.0, 'wind', False, 1.05), (4.7, 0.8, 9.2, 'earth', True, 1.2)):
+    # the pixies about the garden: different kinds, different elements, flying and resting
+    flyers = ((-2.9, 0.95, 8.4, 'fire', 'butterfly', 'long', False, 1.25),
+              (1.7, 1.30, 10.5, 'water', 'dragonfly', 'bob', True, 1.15),
+              (-0.3, 1.95, 13.0, 'wind', 'petal', 'twintails', False, 1.0),
+              (-5.2, 2.3, 16.0, 'earth', 'moth', 'bob', True, 1.0),
+              (3.2, 2.6, 17.0, 'fire', 'dragonfly', 'twintails', False, 0.95))
+    for x, y, z, el, w, hs, flip, size in flyers:
         ground_shadow(img, depth, x, z, size * 0.25, size * 0.12, 0.22)
-        draw_billboard(img, depth, pixie(el, flip), (x, y, z), size, soft=True)
+        draw_billboard(img, depth, pixie(el, w, hs, 'fly', flip), (x, y, z), size, soft=True)
+    # one sitting on top of the near gourd, one kneeling to tend a sprout
+    draw_billboard(img, depth, pixie('earth', 'moth', 'long', 'sit', True), (3.3, 1.55, 8.55), 0.85, soft=True)
+    ground_shadow(img, depth, 2.05, 12.0, 0.3, 0.14, 0.3)
+    draw_billboard(img, depth, pixie('water', 'petal', 'long', 'kneel', False), (2.0, -0.05, 12.0), 0.8, soft=True)
 
     # 15-bit colour, ordered dither, then the hard-pixel scale-up
     a = np.clip(img, 0, 255)
