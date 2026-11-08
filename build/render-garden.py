@@ -405,28 +405,74 @@ def bubble(seed):
     alpha = (0.18 + 0.7 * rim) * inside
     s = Image.fromarray(np.dstack([col, alpha * 255]).astype(np.uint8), 'RGBA')
     d = ImageDraw.Draw(s)
-    # the sleeper: knees drawn up, head bowed, a wisp of hair
-    d.ellipse([22, 18, 34, 30], fill=(232, 226, 240, 210))           # head
-    d.ellipse([24, 28, 44, 48], fill=(220, 214, 236, 200))           # curled body
-    d.ellipse([34, 34, 46, 46], fill=(210, 204, 230, 200))           # knees
-    d.arc([18, 12, 40, 34], 200, 320, fill=(250, 246, 255, 230))     # hair
+    # the sleeper: a small pixie curled up, knees drawn in, hair falling over them, wings folded
+    d.ellipse([18, 26, 40, 40], fill=(214, 226, 236, 120))           # folded wings
+    d.ellipse([24, 30, 44, 48], fill=(238, 228, 236, 220))           # back and legs, curled
+    d.ellipse([34, 38, 46, 50], fill=(246, 230, 226, 230))           # knees
+    d.ellipse([22, 20, 34, 32], fill=(246, 228, 220, 235))           # head, bowed
+    d.pieslice([19, 17, 37, 35], 150, 360, fill=(222, 214, 236, 240))  # pale hair
+    d.line([(36, 26), (40, 40)], fill=(222, 214, 236, 220), width=2)
     d.ellipse([14, 10, 26, 20], fill=(255, 255, 255, 230))           # the bubble's glint
     return s
 
 
-def pixie(seed, tint):
-    """a small pixie on the wing: four petal wings, a slim figure; an original design"""
-    s = Image.new('RGBA', (60, 72), (0, 0, 0, 0))
+ELEMENTS = {   # Avalon's four elements, as the HUD has them: hair, dress, wing tint
+    'wind':  ((236, 226, 150), (226, 214, 120), (210, 236, 190)),
+    'earth': ((150, 104, 70), (124, 150, 82), (214, 200, 150)),
+    'fire':  ((222, 92, 70), (204, 70, 64), (246, 190, 150)),
+    'water': ((96, 140, 214), (90, 120, 200), (176, 214, 246)),
+}
+
+
+def pixie(element, flip=False):
+    """an elemental pixie in flight, drawn large and shaded, then shrunk like a pre-rendered
+    sprite: two pairs of veined, see-through wings, a dress, flowing hair. Avalon's own design"""
+    hair, dress, wing = ELEMENTS[element]
+    W, H = 160, 190
+    s = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    # wings: soft gradient ellipses, rotated, with a brighter rim and veins
+    for (cx, cy, rw, rh, ang) in ((52, 62, 44, 22, 30), (108, 62, 44, 22, -30), (58, 98, 30, 15, -25), (102, 98, 30, 15, 25)):
+        yy, xx = np.mgrid[0:120, 0:120].astype(np.float32)
+        t = math.radians(ang)
+        X = ((xx - 60) * math.cos(t) + (yy - 60) * math.sin(t)) / rw
+        Y = (-(xx - 60) * math.sin(t) + (yy - 60) * math.cos(t)) / rh
+        r2 = X * X + Y * Y
+        inside = r2 <= 1
+        al = np.where(inside, 0.45 + 0.5 * r2 ** 3, 0)
+        col = np.ones((120, 120, 3), np.float32) * np.array(wing, np.float32)
+        col = col * (0.85 + 0.3 * (1 - r2[:, :, None]).clip(0, 1))
+        wimg = Image.fromarray(np.dstack([col.clip(0, 255), al * 255]).astype(np.uint8), 'RGBA')
+        wd = ImageDraw.Draw(wimg)
+        for k in (-0.5, 0, 0.5):                           # veins
+            ex = 60 + math.cos(t + k * 0.5) * rw * 0.9
+            ey = 60 + math.sin(t + k * 0.5) * rw * 0.9 * (1 if cx > 80 else 1)
+            wd.line([(60, 60), (ex if cx > 80 else 120 - ex, ey)], fill=tuple(min(255, c + 30) for c in wing) + (150,))
+        s.alpha_composite(wimg, (int(cx - 60), int(cy - 60)))
     d = ImageDraw.Draw(s)
-    wing = tint + (150,)
-    for (x0, y0, x1, y1) in ((2, 6, 30, 34), (30, 6, 58, 34), (8, 30, 30, 52), (30, 30, 52, 52)):
-        d.ellipse([x0, y0, x1, y1], fill=wing, outline=tuple(min(255, c + 50) for c in tint) + (200,))
-    d.ellipse([25, 10, 35, 20], fill=(244, 222, 214, 255))            # head
-    d.polygon([(24, 8), (36, 8), (38, 16), (22, 16)], fill=(150, 110, 190, 255))  # hair
-    d.polygon([(26, 20), (34, 20), (36, 40), (24, 40)], fill=(96, 118, 196, 255))  # tunic
-    d.line([(28, 40), (27, 60)], fill=(236, 230, 240, 255), width=2)  # legs
-    d.line([(32, 40), (34, 58)], fill=(236, 230, 240, 255), width=2)
-    return s
+    skin, skin_sh = (246, 224, 210), (220, 190, 178)
+    # legs, trailing behind as she flies
+    d.line([(76, 122), (68, 160), (62, 176)], fill=skin_sh, width=5)
+    d.line([(84, 122), (88, 158), (96, 172)], fill=skin, width=5)
+    # the dress, shaded down its right side
+    d.polygon([(72, 74), (88, 74), (102, 130), (58, 130)], fill=dress)
+    d.polygon([(82, 74), (88, 74), (102, 130), (86, 130)], fill=tuple(int(c * 0.78) for c in dress))
+    d.line([(60, 130), (100, 130)], fill=tuple(min(255, int(c * 1.2)) for c in dress), width=2)
+    # arms out, as if gliding
+    d.line([(73, 80), (56, 96), (50, 106)], fill=skin, width=4)
+    d.line([(87, 80), (104, 92), (112, 100)], fill=skin_sh, width=4)
+    # head and hair: long, streaming back
+    d.polygon([(66, 40), (96, 40), (104, 86), (92, 70), (86, 92), (72, 70), (58, 84)], fill=hair)
+    d.ellipse([68, 38, 92, 64], fill=skin)
+    d.ellipse([84, 44, 92, 62], fill=skin_sh)
+    d.chord([64, 30, 96, 56], 180, 360, fill=hair)        # fringe
+    d.ellipse([72, 50, 75, 53], fill=(60, 50, 70))         # eyes
+    d.ellipse([80, 50, 83, 53], fill=(60, 50, 70))
+    # a faint glow of her element about her
+    halo = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(halo).ellipse([30, 30, 130, 170], fill=wing + (60,))
+    halo = halo.filter(ImageFilter.GaussianBlur(14))
+    halo.alpha_composite(s)
+    return halo.transpose(Image.FLIP_LEFT_RIGHT) if flip else halo
 
 
 def glow(colour, size=24):
@@ -537,9 +583,11 @@ def render():
         ground_shadow(img, depth, c[0], c[2], r * 1.2, r * 0.7, 0.32)
         beacon(img, depth, c, r)
 
-    # two pixies on the wing
-    for x, y, z, tint in ((-3.0, 1.05, 9.0, (226, 170, 214)), (2.0, 1.3, 11.5, (214, 176, 230))):
-        draw_billboard(img, depth, pixie(1, tint), (x, y, z), 0.7, soft=True)
+    # the four pixies, one of each element, on the wing about the garden
+    for x, y, z, el, flip, size in ((-2.9, 0.95, 8.4, 'fire', False, 1.25), (1.7, 1.25, 10.5, 'water', True, 1.2),
+                                    (-0.3, 1.9, 13.0, 'wind', False, 1.05), (4.7, 0.8, 9.2, 'earth', True, 1.2)):
+        ground_shadow(img, depth, x, z, size * 0.25, size * 0.12, 0.22)
+        draw_billboard(img, depth, pixie(el, flip), (x, y, z), size, soft=True)
 
     # 15-bit colour, ordered dither, then the hard-pixel scale-up
     a = np.clip(img, 0, 255)
