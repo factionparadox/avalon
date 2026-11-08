@@ -5,5 +5,6 @@
 vt = 7
 
 [default_session]
-command = "cage -s -- quickshell -p /usr/share/garden/greeter.qml"
+# QT_SCALE_FACTOR: the login screen at 175%, like the desktop (monitor_rule in /etc/mango/config.conf)
+command = "env QT_SCALE_FACTOR=1.75 cage -s -- quickshell -p /usr/share/garden/greeter.qml"
 user = "greeter"

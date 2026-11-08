@@ -195,6 +195,8 @@ steps() {
 	set_grub GRUB_TIMEOUT 5
 	set_grub GRUB_GFXMODE auto
 	set_grub GRUB_TERMINAL_OUTPUT gfxterm
+	# Slackware's default GRUB_TERMINAL=console overrides the line above (and so the theme)
+	sed -i 's|^GRUB_TERMINAL=|#GRUB_TERMINAL=|' "$g"
 	set_grub GRUB_THEME /boot/grub/themes/avalon/theme.txt
 	mkdir -p "$T/boot/grub/themes"
 	rm -rf "$T/boot/grub/themes/avalon"; cp -a "$T/usr/share/avalon/grub-theme" "$T/boot/grub/themes/avalon"
@@ -205,6 +207,8 @@ steps() {
 		{ echo "GRUB's menu doesn't name the root by PARTUUID: the laptop wouldn't find it"; return 1; }
 	grep -q "rootflags=subvol=@" "$T/boot/grub/grub.cfg" ||
 		{ echo "GRUB's menu doesn't give the root's subvolume"; return 1; }
+	grep -q "^terminal_output gfxterm" "$T/boot/grub/grub.cfg" && grep -q "^set theme=.*avalon/theme.txt" "$T/boot/grub/grub.cfg" ||
+		{ echo "GRUB's menu wouldn't use Avalon's theme"; return 1; }
 	# a first snapshot: Avalon exactly as installed ("Avalon as it was" in the boot menu)
 	inroot /usr/sbin/avalon-snapshot take "as installed" || echo "(no first snapshot; carrying on)"
 	cp "$LOG" "$T/var/log/avalon-install.log" 2>/dev/null || true

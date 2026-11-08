@@ -87,10 +87,13 @@ install -m755 "$HERE/build/iso/avalon-install" "$LS/avalon-install"
 THEME=$HERE/desktop/usr/share/avalon/grub-theme
 [[ -f $THEME/theme.txt ]] || die "no GRUB theme at $THEME"
 rm -rf "$LS/EFI/BOOT/liveslak"; cp -a "$THEME" "$LS/EFI/BOOT/liveslak"
-sed -i -e 's|^  set gfxmode=.*|  set gfxmode=auto\n  loadfont $cmdpath/liveslak/menu.pf2\n  loadfont $cmdpath/liveslak/hint.pf2|' \
+# (gfxterm_font: otherwise GRUB draws its terminal in the last font loaded, the theme's big
+# proportional one, refuses with "glyphs too large to fit on screen", and falls back to a plain
+# text menu with no theme)
+sed -i -e 's|^  set gfxmode=.*|  set gfxmode=auto\n  loadfont $cmdpath/liveslak/menu.pf2\n  loadfont $cmdpath/liveslak/hint.pf2\n  set gfxterm_font="DejaVu Sans Mono Regular 15"\n  export gfxterm_font|' \
        -e 's|^menuentry "Start @CDISTRO@@DIRSUFFIX@ @SL_VERSION@ @LIVEDE@ liveslak-@VERSION@ (\$sl_lang)"|menuentry "Install Avalon '"$VERSION"' (Iskra)"|' \
        "$LS/grub.tpl"
-grep -q 'menu.pf2' "$LS/grub.tpl" && grep -q 'Install Avalon' "$LS/grub.tpl" || die "liveslak's boot menu has changed; build/build-iso needs updating"
+grep -q 'menu.pf2' "$LS/grub.tpl" && grep -q 'gfxterm_font=' "$LS/grub.tpl" && grep -q 'Install Avalon' "$LS/grub.tpl" || die "liveslak's boot menu has changed; build/build-iso needs updating"
 
 say "Slackware's own documents, which liveslak puts on the stick (checked against Slackware's signed list)"
 awk '$2 ~ /^\.\/(ANNOUNCE|CHANGES_AND_HINTS|COPY|CRYPTO|README|RELEASE_NOTES|SPEAK|[^\/]*HOWTO|UPGRADE)[^\/]*$/ ||
