@@ -516,6 +516,23 @@ def pixie(element, wings='butterfly', hair_style='long', pose='fly', flip=False)
     return halo.transpose(Image.FLIP_LEFT_RIGHT) if flip else halo
 
 
+def youngling(element):
+    """a newly hatched pixie, the stage between the bubble and the grown pixie: a small round
+    body in a glow of her element, a big head, stubby wings still unfolding"""
+    hair, dress, wing = ELEMENTS[element]
+    W = H = 64
+    s = glow(wing, 64)
+    d = ImageDraw.Draw(s)
+    for (x0, y0, x1, y1) in ((12, 18, 30, 32), (34, 18, 52, 32)):   # stubby wings
+        d.ellipse([x0, y0, x1, y1], fill=wing + (170,), outline=tuple(min(255, c + 40) for c in wing) + (220,))
+    d.ellipse([24, 30, 40, 48], fill=dress + (255,))                # round little body
+    d.ellipse([22, 14, 42, 34], fill=(246, 228, 220, 255))          # big head
+    d.chord([20, 10, 44, 30], 180, 360, fill=hair + (255,))         # hair
+    d.ellipse([27, 22, 30, 25], fill=(60, 50, 70, 255))
+    d.ellipse([34, 22, 37, 25], fill=(60, 50, 70, 255))
+    return s
+
+
 def glow(colour, size=24):
     yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
     r = np.sqrt((xx - size / 2) ** 2 + (yy - size / 2) ** 2) / (size / 2)
@@ -624,6 +641,12 @@ def render(own_pixies=None):
     for x, z, s in ((-0.9, 7.6, 0.62), (-0.15, 7.1, 0.42)):
         ground_shadow(img, depth, x, z, s * 0.4, s * 0.2, 0.3)
         draw_billboard(img, depth, bubble(1), (x, 0.02, z), s, soft=True)
+
+    # younglings, just out of their bubbles, hovering low by the bubbles and the sprouts
+    for x, y, z, el, size in ((-0.45, 0.55, 7.0, 'water', 0.34), (-1.6, 0.4, 9.0, 'wind', 0.3),
+                              (0.9, 0.7, 10.0, 'fire', 0.3)):
+        ground_shadow(img, depth, x, z, size * 0.25, size * 0.12, 0.2)
+        draw_billboard(img, depth, youngling(el), (x, y, z), size, soft=True)
 
     # beacons floating over the meadow, their shadows below
     for c, r in (((-1.5, 1.5, 9.0), 0.34), ((6.3, 1.9, 12.0), 0.34)):
