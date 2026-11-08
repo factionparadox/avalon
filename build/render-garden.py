@@ -14,6 +14,11 @@ is that look:
     dithering, scaled up 6x with hard pixels
 
     python3 build/render-garden.py        writes desktop/usr/share/avalon/garden-wallpaper.png
+
+    python3 build/render-garden.py --pixies DIR --out FILE
+        your own pixie sprites (PNGs with transparent backgrounds, in DIR) in place of Avalon's,
+        written to FILE and nowhere else; put FILE at ~/.config/avalon/wallpaper and the Garden
+        uses it in place of the stock wallpaper
 """
 import math
 import random
@@ -573,8 +578,14 @@ def beacon(img, depth, c, r):
 
 
 # ------------------------------------------------------------- the scene
-def render():
+def render(own_pixies=None):
     img, depth = ground_and_sky()
+    own = list(own_pixies or [])
+
+    def pixie_sprite(i, *args):
+        if own:
+            return own[i % len(own)]
+        return pixie(*args)
 
     # far off: the hills in the haze, then the scrub at the meadow's end
     draw_billboard(img, depth, hills(), (-30, 0, 120), 14)
@@ -625,13 +636,13 @@ def render():
               (-0.3, 1.95, 13.0, 'wind', 'petal', 'twintails', False, 1.0),
               (-5.2, 2.3, 16.0, 'earth', 'moth', 'bob', True, 1.0),
               (3.2, 2.6, 17.0, 'fire', 'dragonfly', 'twintails', False, 0.95))
-    for x, y, z, el, w, hs, flip, size in flyers:
+    for i, (x, y, z, el, w, hs, flip, size) in enumerate(flyers):
         ground_shadow(img, depth, x, z, size * 0.25, size * 0.12, 0.22)
-        draw_billboard(img, depth, pixie(el, w, hs, 'fly', flip), (x, y, z), size, soft=True)
+        draw_billboard(img, depth, pixie_sprite(i, el, w, hs, 'fly', flip), (x, y, z), size, soft=True)
     # one sitting on top of the near gourd, one kneeling to tend a sprout
-    draw_billboard(img, depth, pixie('earth', 'moth', 'long', 'sit', True), (3.3, 1.55, 8.55), 0.85, soft=True)
+    draw_billboard(img, depth, pixie_sprite(5, 'earth', 'moth', 'long', 'sit', True), (3.3, 1.55, 8.55), 0.85, soft=True)
     ground_shadow(img, depth, 2.05, 12.0, 0.3, 0.14, 0.3)
-    draw_billboard(img, depth, pixie('water', 'petal', 'long', 'kneel', False), (2.0, -0.05, 12.0), 0.8, soft=True)
+    draw_billboard(img, depth, pixie_sprite(6, 'water', 'petal', 'long', 'kneel', False), (2.0, -0.05, 12.0), 0.8, soft=True)
 
     # 15-bit colour, ordered dither, then the hard-pixel scale-up
     a = np.clip(img, 0, 255)
@@ -645,7 +656,27 @@ def render():
     return Image.fromarray(a).resize((RW * SCALE, RH * SCALE), Image.NEAREST)
 
 
+def load_sprites(folder):
+    sprites = []
+    for f in sorted(Path(folder).expanduser().glob('*.png')):
+        im = Image.open(f).convert('RGBA')
+        box = im.getbbox()
+        if box:
+            sprites.append(im.crop(box))
+    if not sprites:
+        raise SystemExit(f'render-garden: no PNG sprites in {folder}')
+    return sprites
+
+
 if __name__ == '__main__':
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    render().save(OUT, optimize=True)
-    print('written', OUT)
+    import argparse
+    ap = argparse.ArgumentParser(description="Render Avalon's garden wallpaper")
+    ap.add_argument('--pixies', help='a folder of your own pixie sprites (PNG, transparent background)')
+    ap.add_argument('--out', help='where to write it (required with --pixies; the stock file is left alone)')
+    a = ap.parse_args()
+    if a.pixies and not a.out:
+        ap.error('--pixies needs --out, so the stock wallpaper in the repository is left as it is')
+    out = Path(a.out).expanduser() if a.out else OUT
+    out.parent.mkdir(parents=True, exist_ok=True)
+    render(load_sprites(a.pixies) if a.pixies else None).save(out, optimize=True)
+    print('written', out)
